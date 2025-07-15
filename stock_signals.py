@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import qstock as qs
+import akshare as ak
 from datetime import datetime
 import warnings
 import time
@@ -29,34 +29,44 @@ def retry_on_failure(max_retries=3, delay=1):
 def get_stock_data(stock_code):
     """获取股票数据"""
     try:
-        start_date = "20240901"
-        end_date = datetime.now().strftime('%Y%m%d')
-        df = qs.get_data(stock_code, start=start_date, end=end_date)
+        start_date = "2024-09-01"
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        
+        # 使用akshare获取股票数据
+        df = ak.stock_zh_a_hist(symbol=stock_code, period="daily", start_date=start_date, end_date=end_date, adjust="")
+        
+        # 重命名列以保持一致性
         df = df.rename(columns={
             '收盘': 'close',
             '开盘': 'open',
             '最高': 'high',
             '最低': 'low',
-            '成交量': 'volume',
-            '日期': 'date'
+            '成交量': 'volume'
         })
-        if 'date' in df.columns:
-            df.set_index('date', inplace=True)
+        
+        # 设置日期索引
+        df['date'] = pd.to_datetime(df['日期'])
+        df.set_index('date', inplace=True)
+        
+        # 只保留需要的列
+        df = df[['open', 'high', 'low', 'close', 'volume']]
+        
         return df
     except Exception as e:
+        print(f"获取股票数据失败 {stock_code}: {e}")
         return None
 
 @retry_on_failure(max_retries=3, delay=1)
 def get_all_stocks():
     """获取沪深300成分股代码和名称"""
     try:
-        # 获取沪深300成分股
-        df = qs.index_member('hs300')
+        # 使用akshare获取沪深300成分股
+        df = ak.index_stock_cons(index="000300")
         
-        # 将代码和名称组合成DataFrame
+        # 创建标准格式的DataFrame
         stock_data = pd.DataFrame({
-            'code': df['股票代码'].tolist(),  # 直接获取股票代码列
-            'name': df['股票名称'].tolist()   # 直接获取股票名称列
+            'code': df['品种代码'].tolist(),
+            'name': df['品种名称'].tolist()
         })
         
         return stock_data.reset_index(drop=True)
