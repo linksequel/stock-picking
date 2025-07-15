@@ -61,8 +61,7 @@ def get_all_stocks():
     """获取沪深300成分股代码和名称"""
     try:
         # 使用akshare获取沪深300成分股
-        df = ak.index_stock_cons(index="000300")
-        
+        df = ak.index_stock_cons(symbol="000300")
         # 创建标准格式的DataFrame
         stock_data = pd.DataFrame({
             'code': df['品种代码'].tolist(),
