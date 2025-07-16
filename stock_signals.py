@@ -29,11 +29,17 @@ def retry_on_failure(max_retries=3, delay=1):
 def get_stock_data(stock_code):
     """获取股票数据"""
     try:
-        start_date = "2024-09-01"
-        end_date = datetime.now().strftime('%Y-%m-%d')
+        start_date = "20240901"
+        end_date = datetime.now().strftime('%Y%m%d')
         
         # 使用akshare获取股票数据
         df = ak.stock_zh_a_hist(symbol=stock_code, period="daily", start_date=start_date, end_date=end_date, adjust="")
+        
+        if df.empty:
+            return None
+            
+        # 先处理日期列
+        df['date'] = pd.to_datetime(df['日期'])
         
         # 重命名列以保持一致性
         df = df.rename(columns={
@@ -45,7 +51,6 @@ def get_stock_data(stock_code):
         })
         
         # 设置日期索引
-        df['date'] = pd.to_datetime(df['日期'])
         df.set_index('date', inplace=True)
         
         # 只保留需要的列
