@@ -45,7 +45,7 @@ def setup_logger_and_log_stocks(stocks):
             samples_dict.append(row_dict)
         
         logger.info(f"沪深300股票样本（完整结构）:")
-        logger.info(json.dumps(samples_dict, ensure_ascii=False, indent=2))
+        # logger.info(json.dumps(samples_dict, ensure_ascii=False, indent=2))
         
         # 额外记录一些统计信息
         logger.info(f"stocks数据结构信息:")
