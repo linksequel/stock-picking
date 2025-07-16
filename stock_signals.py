@@ -5,8 +5,58 @@ from datetime import datetime
 import warnings
 import time
 import random
+import json
+import logging
+import os
 from requests.exceptions import RequestException
 warnings.filterwarnings('ignore')
+
+def setup_logger_and_log_stocks(stocks):
+    """配置日志并记录stocks信息"""
+    # 配置日志
+    if not os.path.exists('log'):
+        os.makedirs('log')
+    
+    # 配置日志格式
+    log_filename = f"log/stock_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    
+    # 清除现有的处理器，避免重复添加
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_filename, encoding='utf-8'),
+            logging.StreamHandler()  # 同时输出到控制台
+        ]
+    )
+    logger = logging.getLogger(__name__)
+    
+    # 记录stocks信息
+    if stocks is not None and not stocks.empty:
+        logger.info(f"获取到股票数量: {len(stocks)}")
+
+        # 转换为完整的字典格式，保留所有列的数据
+        samples_dict = []
+        for _, row in stocks.iterrows():
+            row_dict = row.to_dict()  # 保留完整的行数据
+            samples_dict.append(row_dict)
+        
+        logger.info(f"沪深300股票样本（完整结构）:")
+        logger.info(json.dumps(samples_dict, ensure_ascii=False, indent=2))
+        
+        # 额外记录一些统计信息
+        logger.info(f"stocks数据结构信息:")
+        logger.info(f"  - 列名: {list(stocks.columns)}")
+        logger.info(f"  - 数据形状: {stocks.shape}")
+        logger.info(f"  - 数据类型: {stocks.dtypes.to_dict()}")
+        
+    else:
+        logger.warning("未能获取到股票数据")
+    
+    return logger
 
 def retry_on_failure(max_retries=3, delay=1):
     """重试装饰器"""
@@ -73,6 +123,10 @@ def get_all_stocks():
             'name': df['品种名称'].tolist()
         })
         
+        # 根据code去重，保留第一个出现的记录
+        stock_data = stock_data.drop_duplicates(subset=['code'], keep='first')
+        
+        # 重置索引并返回
         return stock_data.reset_index(drop=True)
     except Exception as e:
         print(f"获取沪深300成分股失败: {e}")
@@ -453,6 +507,8 @@ def process_single_stock(args):
 def get_all_stock_signals():
     """获取所有股票的信号"""
     stocks = get_all_stocks()
+    # 使用包装好的日志函数
+    logger = setup_logger_and_log_stocks(stocks)
     if stocks is None:
         return []
     
@@ -468,9 +524,16 @@ def get_all_stock_signals():
         
         # 分批提交任务，避免同时发送太多请求
         batch_size = 50
+        batch_count = 0  # 批次计数器
+        total_batches = (len(stock_list) + batch_size - 1) // batch_size  # 总批次数
+        
         for i in range(0, len(stock_list), batch_size):
+            batch_count += 1
             batch = stock_list[i:i+batch_size]
             futures = [executor.submit(process_single_stock, (code, name)) for code, name in batch]
+            
+            # 记录批次信息到日志
+            logger.info(f"正在处理第 {batch_count}/{total_batches} 批，此批次包含 {len(futures)} 个任务")
             
             # 处理结果
             for future in futures:
