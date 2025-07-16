@@ -32,8 +32,8 @@ def compare_json(json1_path, json2_path):
     return diffs
 
 # 假设json1.json和json2.json是你要比较的两个文件路径
-json1_path = 'stock_signals.json'
-json2_path = 'others.json'
+json1_path = 'signal-linux-qstock.json'
+json2_path = 'signal-linux-akshare.json'
 differences = compare_json(json1_path, json2_path)
 for diff in differences:
     print(diff)
