@@ -29,6 +29,14 @@
             color: #dc3545;
             font-weight: bold;
         }
+        .data-missing {
+            color: #6c757d;
+            font-style: italic;
+        }
+        .day-column {
+            min-width: 80px;
+            text-align: center;
+        }
         .date-header {
             background-color: #f8f9fa;
             border-left: 4px solid #007bff;
@@ -231,6 +239,31 @@
             return trueSignals;
         }
 
+        function formatDateShort(dateStr) {
+            // 将日期格式转换为MM-DD格式
+            let date = new Date(dateStr);
+            let month = String(date.getMonth() + 1).padStart(2, '0');
+            let day = String(date.getDate()).padStart(2, '0');
+            return `${month}-${day}`;
+        }
+
+        function generateDateColumns(signalDate, days) {
+            // 根据信号日期和观测天数生成后续交易日的日期列
+            let columns = [];
+            let baseDate = new Date(signalDate);
+            
+            for (let i = 1; i <= days; i++) {
+                let nextDate = new Date(baseDate);
+                nextDate.setDate(baseDate.getDate() + i);
+                columns.push({
+                    day: i,
+                    dateStr: formatDateShort(nextDate.toISOString()),
+                    fullDate: nextDate.toISOString().split('T')[0]
+                });
+            }
+            return columns;
+        }
+
         function loadHistoryData() {
             showLoading();
             
@@ -263,19 +296,33 @@
                     `);
                     container.append(dateHeader);
                     
+                    // 生成日期列
+                    let dateColumns = generateDateColumns(date, currentDays);
+                    
+                    // 生成表头
+                    let tableHeaderHtml = `
+                        <tr>
+                            <th>代码</th>
+                            <th>名称</th>
+                            <th>信号日价格</th>
+                            <th>信号</th>
+                    `;
+                    
+                    for (let col of dateColumns) {
+                        tableHeaderHtml += `<th class="day-column">${col.dateStr}<br><small>第${col.day}天</small></th>`;
+                    }
+                    
+                    tableHeaderHtml += `
+                            <th>累计涨幅</th>
+                            <th>状态</th>
+                        </tr>
+                    `;
+                    
                     let table = $(`
                         <div class="table-responsive">
                             <table class="table table-striped table-hover">
                                 <thead>
-                                    <tr>
-                                        <th>代码</th>
-                                        <th>名称</th>
-                                        <th>信号日价格</th>
-                                        <th>信号</th>
-                                        <th>每日涨幅</th>
-                                        <th>累计涨幅</th>
-                                        <th>状态</th>
-                                    </tr>
+                                    ${tableHeaderHtml}
                                 </thead>
                                 <tbody></tbody>
                             </table>
@@ -290,27 +337,44 @@
                             `<span class="signal-badge signal-badge-true">${signal}</span>`
                         ).join('');
                         
-                        let dailyChangesHtml = '';
                         let totalChangeClass = '';
                         let totalChangeText = '';
                         let statusText = '';
                         
+                        // 生成每日涨幅的单元格
+                        let dailyChangesCells = '';
+                        
                         if (stock.daily_changes && stock.daily_changes.length > 0) {
-                            // 生成每日涨幅HTML
-                            dailyChangesHtml = stock.daily_changes.map(change => {
-                                let changeClass = change.change > 0 ? 'price-change-positive' : 'price-change-negative';
-                                return `<div class="${changeClass}">第${change.day}天: ${change.change.toFixed(2)}%</div>`;
-                            }).join('');
+                            // 创建日期到涨幅的映射
+                            let changesMap = {};
+                            stock.daily_changes.forEach(change => {
+                                let changeDate = new Date(change.date).toISOString().split('T')[0];
+                                changesMap[changeDate] = change;
+                            });
+                            
+                            // 为每个日期列生成对应的涨幅
+                            for (let col of dateColumns) {
+                                if (changesMap[col.fullDate]) {
+                                    let change = changesMap[col.fullDate];
+                                    let changeClass = change.change > 0 ? 'price-change-positive' : 'price-change-negative';
+                                    dailyChangesCells += `<td class="${changeClass}">${change.change.toFixed(2)}%</td>`;
+                                } else {
+                                    dailyChangesCells += `<td class="data-missing">数据缺失</td>`;
+                                }
+                            }
                             
                             // 计算累计涨幅
                             let lastChange = stock.daily_changes[stock.daily_changes.length - 1];
                             totalChangeClass = lastChange.change > 0 ? 'price-change-positive' : 'price-change-negative';
                             totalChangeText = lastChange.change.toFixed(2) + '%';
-                            statusText = lastChange.date;
+                            statusText = formatDateShort(lastChange.date);
                         } else {
-                            dailyChangesHtml = '<div class="text-muted">数据获取中...</div>';
-                            totalChangeText = '-';
-                            statusText = '数据获取中...';
+                            // 如果没有daily_changes数据，所有列都显示数据缺失
+                            for (let col of dateColumns) {
+                                dailyChangesCells += `<td class="data-missing">数据缺失</td>`;
+                            }
+                            totalChangeText = '<span class="data-missing">数据缺失</span>';
+                            statusText = '数据缺失';
                         }
                         
                         let row = $(`
@@ -319,7 +383,7 @@
                                 <td>${stock.name}</td>
                                 <td>${stock.close.toFixed(2)}</td>
                                 <td>${signalsHtml}</td>
-                                <td>${dailyChangesHtml}</td>
+                                ${dailyChangesCells}
                                 <td class="${totalChangeClass}">${totalChangeText}</td>
                                 <td>${statusText}</td>
                             </tr>
