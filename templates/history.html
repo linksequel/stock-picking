@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>历史信号分析 - 股票信号筛选系统</title>
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.bootcdn.net/ajax/libs/datatables/1.10.21/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <style>
+        .signal-badge {
+            margin: 0 2px;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        .signal-badge-true {
+            background-color: #28a745;
+            color: white;
+        }
+        .signal-badge-false {
+            background-color: #dc3545;
+            color: white;
+        }
+        .price-change-positive {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .price-change-negative {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .date-header {
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+            padding: 10px;
+            margin: 20px 0 10px 0;
+            border-radius: 5px;
+        }
+        .nav-tabs .nav-link {
+            color: #495057;
+        }
+        .nav-tabs .nav-link.active {
+            color: #007bff;
+            font-weight: bold;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .loading-content {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid mt-4">
+        <div class="row mb-4">
+            <div class="col">
+                <h2 class="text-center">历史信号分析</h2>
+                <div class="text-center">
+                    <a href="/" class="btn btn-outline-primary">返回实时信号</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">分析设置</h5>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="daysInput" class="form-label">观测天数</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="daysInput" value="5" min="1" max="30">
+                                    <span class="input-group-text">天</span>
+                                    <button class="btn btn-primary" id="analyzeBtn">开始分析</button>
+                                </div>
+                                <div class="form-text">设置观测信号后N个交易日的涨幅情况</div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="d-flex align-items-end h-100">
+                                    <div>
+                                        <button id="refreshBtn" class="btn btn-outline-secondary">
+                                            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                                            刷新数据
+                                        </button>
+                                        <small class="text-muted ms-2">最后更新：<span id="updateTime">-</span></small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">历史信号统计</h5>
+                        <div id="statsContainer" class="row mb-3">
+                            <div class="col-md-3">
+                                <div class="card bg-primary text-white">
+                                    <div class="card-body text-center">
+                                        <h6>总信号数</h6>
+                                        <h4 id="totalSignals">0</h4>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-success text-white">
+                                    <div class="card-body text-center">
+                                        <h6>上涨股票</h6>
+                                        <h4 id="upStocks">0</h4>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-danger text-white">
+                                    <div class="card-body text-center">
+                                        <h6>下跌股票</h6>
+                                        <h4 id="downStocks">0</h4>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-info text-white">
+                                    <div class="card-body text-center">
+                                        <h6>平均涨幅</h6>
+                                        <h4 id="avgChange">0%</h4>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="signalsContainer">
+                            <!-- 信号数据将在这里动态加载 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载遮罩 -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner-border text-primary mb-3" role="status">
+                <span class="visually-hidden">加载中...</span>
+            </div>
+            <h5>正在分析历史信号...</h5>
+            <p class="text-muted">这可能需要几分钟时间，请耐心等待</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.1.3/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        let currentDays = 5;
+
+        function showLoading() {
+            $('#loadingOverlay').show();
+        }
+
+        function hideLoading() {
+            $('#loadingOverlay').hide();
+        }
+
+        function updateStats(signalsByDate) {
+            let totalSignals = 0;
+            let upStocks = 0;
+            let downStocks = 0;
+            let totalChange = 0;
+            let validChanges = 0;
+
+            for (let date in signalsByDate) {
+                for (let stock of signalsByDate[date]) {
+                    if (any(stock.signals)) {
+                        totalSignals++;
+                        if (stock.daily_changes && stock.daily_changes.length > 0) {
+                            // 使用最后一天的涨幅进行统计
+                            let lastChange = stock.daily_changes[stock.daily_changes.length - 1].change;
+                            if (lastChange > 0) {
+                                upStocks++;
+                            } else if (lastChange < 0) {
+                                downStocks++;
+                            }
+                            totalChange += lastChange;
+                            validChanges++;
+                        }
+                    }
+                }
+            }
+
+            $('#totalSignals').text(totalSignals);
+            $('#upStocks').text(upStocks);
+            $('#downStocks').text(downStocks);
+            $('#avgChange').text(validChanges > 0 ? (totalChange / validChanges).toFixed(2) + '%' : '0%');
+        }
+
+        function any(obj) {
+            for (let key in obj) {
+                if (obj[key] === true) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function getTrueSignals(signals) {
+            let trueSignals = [];
+            for (let key in signals) {
+                if (signals[key] === true) {
+                    trueSignals.push(key);
+                }
+            }
+            return trueSignals;
+        }
+
+        function loadHistoryData() {
+            showLoading();
+            
+            $.get('/api/history', { days: currentDays }, function(data) {
+                hideLoading();
+                
+                updateStats(data.signals_by_date);
+                
+                let container = $('#signalsContainer');
+                container.empty();
+                
+                if (Object.keys(data.signals_by_date).length === 0) {
+                    container.html('<div class="alert alert-info">暂无历史信号数据</div>');
+                    return;
+                }
+                
+                // 按日期倒序排列
+                let dates = Object.keys(data.signals_by_date).sort().reverse();
+                
+                for (let date of dates) {
+                    let stocks = data.signals_by_date[date];
+                    let signalStocks = stocks.filter(stock => any(stock.signals));
+                    
+                    if (signalStocks.length === 0) continue;
+                    
+                    let dateHeader = $(`
+                        <div class="date-header">
+                            <h5>${date} (${signalStocks.length} 只股票)</h5>
+                        </div>
+                    `);
+                    container.append(dateHeader);
+                    
+                    let table = $(`
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>代码</th>
+                                        <th>名称</th>
+                                        <th>信号日价格</th>
+                                        <th>信号</th>
+                                        <th>每日涨幅</th>
+                                        <th>累计涨幅</th>
+                                        <th>状态</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    `);
+                    
+                    let tbody = table.find('tbody');
+                    
+                    for (let stock of signalStocks) {
+                        let trueSignals = getTrueSignals(stock.signals);
+                        let signalsHtml = trueSignals.map(signal => 
+                            `<span class="signal-badge signal-badge-true">${signal}</span>`
+                        ).join('');
+                        
+                        let dailyChangesHtml = '';
+                        let totalChangeClass = '';
+                        let totalChangeText = '';
+                        let statusText = '';
+                        
+                        if (stock.daily_changes && stock.daily_changes.length > 0) {
+                            // 生成每日涨幅HTML
+                            dailyChangesHtml = stock.daily_changes.map(change => {
+                                let changeClass = change.change > 0 ? 'price-change-positive' : 'price-change-negative';
+                                return `<div class="${changeClass}">第${change.day}天: ${change.change.toFixed(2)}%</div>`;
+                            }).join('');
+                            
+                            // 计算累计涨幅
+                            let lastChange = stock.daily_changes[stock.daily_changes.length - 1];
+                            totalChangeClass = lastChange.change > 0 ? 'price-change-positive' : 'price-change-negative';
+                            totalChangeText = lastChange.change.toFixed(2) + '%';
+                            statusText = lastChange.date;
+                        } else {
+                            dailyChangesHtml = '<div class="text-muted">数据获取中...</div>';
+                            totalChangeText = '-';
+                            statusText = '数据获取中...';
+                        }
+                        
+                        let row = $(`
+                            <tr>
+                                <td>${stock.code}</td>
+                                <td>${stock.name}</td>
+                                <td>${stock.close.toFixed(2)}</td>
+                                <td>${signalsHtml}</td>
+                                <td>${dailyChangesHtml}</td>
+                                <td class="${totalChangeClass}">${totalChangeText}</td>
+                                <td>${statusText}</td>
+                            </tr>
+                        `);
+                        
+                        tbody.append(row);
+                    }
+                    
+                    container.append(table);
+                }
+                
+                $('#updateTime').text(new Date().toLocaleString());
+            }).fail(function() {
+                hideLoading();
+                $('#signalsContainer').html('<div class="alert alert-danger">加载数据失败，请稍后重试</div>');
+            });
+        }
+
+        $(document).ready(function() {
+            // 初始加载
+            loadHistoryData();
+
+            // 分析按钮点击事件
+            $('#analyzeBtn').click(function() {
+                currentDays = parseInt($('#daysInput').val());
+                if (currentDays < 1 || currentDays > 30) {
+                    alert('观测天数必须在1-30之间');
+                    return;
+                }
+                loadHistoryData();
+            });
+
+            // 刷新按钮点击事件
+            $('#refreshBtn').click(function() {
+                const spinner = $('#refreshBtn .spinner-border');
+                spinner.removeClass('d-none');
+                loadHistoryData();
+                setTimeout(() => {
+                    spinner.addClass('d-none');
+                }, 1000);
+            });
+
+            // 回车键触发分析
+            $('#daysInput').keypress(function(e) {
+                if (e.which === 13) {
+                    $('#analyzeBtn').click();
+                }
+            });
+        });
+    </script>
+</body>
+</html> 

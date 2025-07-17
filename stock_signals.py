@@ -3,12 +3,9 @@ import numpy as np
 import akshare as ak
 from datetime import datetime
 import warnings
-import time
 import random
-import json
 import logging
 import os
-from requests.exceptions import RequestException
 warnings.filterwarnings('ignore')
 
 def setup_logger_and_log_stocks(stocks):

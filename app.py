@@ -3,9 +3,11 @@ from stock_signals import get_all_stock_signals
 import threading
 import time
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import webbrowser
+import pandas as pd
+import akshare as ak
 
 app = Flask(__name__)
 
@@ -26,7 +28,46 @@ def update_signals():
         # 保存数据到文件
         with open('stock_signals.json', 'w', encoding='utf-8') as f:
             json.dump({'signals': signals, 'update_time': last_update_time.strftime('%Y-%m-%d %H:%M:%S')}, f, ensure_ascii=False)
+        
+        # 保存为CSV文件
+        save_signals_to_csv(signals)
         print("股票信号更新完成")
+
+def save_signals_to_csv(signals):
+    """将信号数据保存为CSV文件"""
+    if not signals:
+        return
+    
+    # 获取当前文件所在目录
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    history_dir = os.path.join(current_dir, 'history')
+    
+    # 创建history目录
+    if not os.path.exists(history_dir):
+        os.makedirs(history_dir)
+    
+    # 只保存有信号的股票
+    csv_data = []
+    for signal in signals:
+        # 检查是否有任何信号为True
+        if any(signal['signals'].values()):
+            row = {
+                'code': signal['code'],
+                'name': signal['name'],
+                'date': signal['date'],
+                'close': signal['close']
+            }
+            # 添加所有信号
+            for signal_name, signal_value in signal['signals'].items():
+                row[signal_name] = signal_value
+            csv_data.append(row)
+    
+    # 创建DataFrame并保存
+    df = pd.DataFrame(csv_data)
+    today = datetime.now().strftime('%Y%m%d')
+    csv_filename = os.path.join(history_dir, f'signals_{today}.csv')
+    df.to_csv(csv_filename, index=False, encoding='utf-8-sig')
+    print(f"信号数据已保存到: {csv_filename}，共保存 {len(csv_data)} 只有信号的股票")
 
 def load_cached_signals():
     """从缓存文件加载信号数据"""
@@ -52,10 +93,118 @@ def should_update():
     # 非交易时间，每天更新一次
     return (now - last_update_time).days >= 1
 
+def get_stock_prices_after_days(stock_code, signal_date_obj, days=5):
+    """获取股票在信号日期后N天内每天的价格"""
+    try:
+        # 确保股票代码格式正确
+        if not isinstance(stock_code, str):
+            stock_code = str(stock_code)
+        
+        # 确保股票代码是6位数字格式
+        if len(stock_code) != 6 or not stock_code.isdigit():
+            print(f"股票代码格式错误: {stock_code}")
+            return None
+        
+        days_diff = (datetime.now().date() - signal_date_obj.date()).days
+
+        start_date = (signal_date_obj + timedelta(days=1)).strftime('%Y%m%d')
+        gap = min(days, days_diff)
+        end_date = (signal_date_obj + timedelta(days=gap)).strftime('%Y%m%d')
+        
+        # 获取股票数据
+        df = ak.stock_zh_a_hist(symbol=stock_code, period="daily", 
+                               start_date=start_date,
+                               end_date=end_date,
+                               adjust="")
+        
+        if df.empty:
+            print(f"股票 {stock_code} 数据为空")
+            return None
+        
+        # 处理日期列并排序
+        df['date'] = pd.to_datetime(df['日期'])
+        df = df.sort_values('date')
+        
+        # 填充信号日期后的N个交易日数据
+        daily_prices = []
+        for i in range(gap):
+            if i < len(df):
+                row = df.iloc[i]
+                daily_prices.append({
+                    'date': row['日期'],
+                    'close': row['收盘'],
+                    'day': i + 1
+                })
+            else:
+                # 如果数据不足，使用最后一天的数据
+                latest_row = df.iloc[-1]
+                daily_prices.append({
+                    'date': latest_row['日期'],
+                    'close': latest_row['收盘'],
+                    'day': i + 1
+                })
+        
+        return daily_prices
+            
+    except Exception as e:
+        print(f"获取股票 {stock_code} 后续价格失败: {e}")
+        return None
+
+def load_signals_from_csv():
+    """从CSV文件加载信号数据"""
+    signals_by_date = {}
+    
+    # 获取当前文件所在目录
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    history_dir = os.path.join(current_dir, 'history')
+    
+    # 查找history目录下的所有信号CSV文件
+    if not os.path.exists(history_dir):
+        print(f"History目录不存在: {history_dir}")
+        return signals_by_date
+    
+    csv_files = [f for f in os.listdir(history_dir) if f.startswith('signals_') and f.endswith('.csv')]
+    print(f"找到 {len(csv_files)} 个CSV文件: {csv_files}")
+    
+    for csv_file in sorted(csv_files, reverse=True):  # 按文件名倒序，最新的在前
+        try:
+            file_path = os.path.join(history_dir, csv_file)
+            df = pd.read_csv(file_path, encoding='utf-8-sig', dtype={'code': str})
+            
+            # 按日期分组
+            for _, row in df.iterrows():
+                date = row['date']
+                if date not in signals_by_date:
+                    signals_by_date[date] = []
+                
+                # 构建信号字典
+                signals = {}
+                for col in df.columns:
+                    if col not in ['code', 'name', 'date', 'close']:
+                        signals[col] = row[col]
+                
+                stock_data = {
+                    'code': row['code'],
+                    'name': row['name'],
+                    'close': row['close'],
+                    'signals': signals
+                }
+                signals_by_date[date].append(stock_data)
+                
+        except Exception as e:
+            print(f"读取CSV文件 {csv_file} 失败: {e}")
+    
+    return signals_by_date
+
 @app.route('/')
 def index():
     """主页"""
     return render_template('index.html')
+
+@app.route('/history')
+def history():
+    """历史信号页面"""
+    return render_template('history.html')
 
 @app.route('/api/signals')
 def get_signals():
@@ -81,6 +230,44 @@ def get_signals():
         'update_time': last_update_time.strftime('%Y-%m-%d %H:%M:%S') if last_update_time else None
     })
 
+@app.route('/api/history')
+def get_history():
+    # """获取历史信号数据API"""
+    # days = request.args.get('days', 5, type=int)
+    days = 5
+    signals_by_date = load_signals_from_csv()
+    
+    # 为每个股票计算后续每天的涨幅
+    for date_str, stocks in signals_by_date.items():
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+        # 如果signal_date是今天，跳过
+        if date_obj.date() == datetime.now().date():
+            continue
+        for stock in stocks:
+            # 只处理有信号的股票
+            if any(stock['signals'].values()):
+                daily_prices = get_stock_prices_after_days(stock['code'], date_obj, days)
+                if daily_prices is not None:
+                    stock['daily_prices'] = daily_prices
+                    # 计算每天的涨幅
+                    stock['daily_changes'] = []
+                    for price_data in daily_prices:
+                        change = ((price_data['close'] - stock['close']) / stock['close']) * 100
+                        stock['daily_changes'].append({
+                            'day': price_data['day'],
+                            'date': price_data['date'],
+                            'price': price_data['close'],
+                            'change': change
+                        })
+                else:
+                    stock['daily_prices'] = None
+                    stock['daily_changes'] = None
+    
+    return jsonify({
+        'signals_by_date': signals_by_date,
+        'days': days
+    })
+
 def open_browser():
     """在新线程中打开浏览器"""
     time.sleep(1.5)  # 等待服务器启动
@@ -96,6 +283,7 @@ if __name__ == '__main__':
     print("\n=== 股票信号分析系统启动 ===")
     print("正在启动本地服务器...")
     print("服务器地址: http://127.0.0.1:5000")
+    print("历史信号页面: http://127.0.0.1:5000/history")
     print("您可以在浏览器中访问上述地址查看结果")
     print("=========================\n")
     
