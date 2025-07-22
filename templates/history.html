@@ -21,13 +21,23 @@
             background-color: #dc3545;
             color: white;
         }
+        /* 中国股市习惯：红涨绿跌 */
         .price-change-positive {
-            color: #28a745;
+            color: #dc3545; /* 改为红色 */
             font-weight: bold;
         }
         .price-change-negative {
-            color: #dc3545;
+            color: #28a745; /* 改为绿色 */
             font-weight: bold;
+        }
+        /* 信号标签颜色：底部信号和主升信号为红色，顶部信号为绿色 */
+        .signal-badge-bullish {
+            background-color: #dc3545; /* 红色 - 看涨信号 */
+            color: white;
+        }
+        .signal-badge-bearish {
+            background-color: #28a745; /* 绿色 - 看跌信号 */
+            color: white;
         }
         .data-missing {
             color: #6c757d;
@@ -68,6 +78,13 @@
             padding: 30px;
             border-radius: 10px;
             text-align: center;
+        }
+        /* 统计卡片颜色调整 */
+        .bg-up {
+            background-color: #dc3545 !important; /* 红色 - 上涨 */
+        }
+        .bg-down {
+            background-color: #28a745 !important; /* 绿色 - 下跌 */
         }
     </style>
 </head>
@@ -129,7 +146,7 @@
                                 </div>
                             </div>
                             <div class="col-md-3">
-                                <div class="card bg-success text-white">
+                                <div class="card bg-up text-white">
                                     <div class="card-body text-center">
                                         <h6>上涨股票</h6>
                                         <h4 id="upStocks">0</h4>
@@ -137,7 +154,7 @@
                                 </div>
                             </div>
                             <div class="col-md-3">
-                                <div class="card bg-danger text-white">
+                                <div class="card bg-down text-white">
                                     <div class="card-body text-center">
                                         <h6>下跌股票</h6>
                                         <h4 id="downStocks">0</h4>
@@ -217,7 +234,23 @@
             $('#totalSignals').text(totalSignals);
             $('#upStocks').text(upStocks);
             $('#downStocks').text(downStocks);
-            $('#avgChange').text(validChanges > 0 ? (totalChange / validChanges).toFixed(2) + '%' : '0%');
+            
+            // 平均涨幅的颜色处理
+            let avgChangeValue = validChanges > 0 ? (totalChange / validChanges) : 0;
+            let avgChangeText = avgChangeValue.toFixed(2) + '%';
+            let avgChangeElement = $('#avgChange');
+            avgChangeElement.text(avgChangeText);
+            
+            // 根据平均涨幅调整平均涨幅卡片的背景色
+            let avgCard = avgChangeElement.closest('.card');
+            avgCard.removeClass('bg-info bg-up bg-down');
+            if (avgChangeValue > 0) {
+                avgCard.addClass('bg-up');
+            } else if (avgChangeValue < 0) {
+                avgCard.addClass('bg-down');
+            } else {
+                avgCard.addClass('bg-info');
+            }
         }
 
         function any(obj) {
@@ -237,6 +270,17 @@
                 }
             }
             return trueSignals;
+        }
+
+        function getSignalBadgeClass(signalName) {
+            // 根据信号名称判断是看涨还是看跌信号
+            if (signalName.startsWith('底') || signalName === '主升') {
+                return 'signal-badge-bullish'; // 红色 - 看涨
+            } else if (signalName.startsWith('顶')) {
+                return 'signal-badge-bearish'; // 绿色 - 看跌
+            } else {
+                return 'signal-badge-true'; // 默认绿色
+            }
         }
 
         function formatDateShort(dateStr) {
@@ -334,7 +378,7 @@
                     for (let stock of signalStocks) {
                         let trueSignals = getTrueSignals(stock.signals);
                         let signalsHtml = trueSignals.map(signal => 
-                            `<span class="signal-badge signal-badge-true">${signal}</span>`
+                            `<span class="signal-badge ${getSignalBadgeClass(signal)}">${signal}</span>`
                         ).join('');
                         
                         let totalChangeClass = '';
