@@ -37,7 +37,13 @@ def save_signals_to_csv(signals):
     """将信号数据保存为CSV文件"""
     if not signals:
         return
-    
+
+    # 时间校验：如果当前时间在15:31之前，则不保存
+    current_time = datetime.now()
+    if current_time.hour < 15 or (current_time.hour == 15 and current_time.minute < 31):
+        print(f"当前时间 {current_time.strftime('%H:%M')} 在15:31之前，暂不保存信号")
+        return 
+
     # 获取当前文件所在目录
     current_dir = os.path.dirname(os.path.abspath(__file__))
     history_dir = os.path.join(current_dir, 'history')

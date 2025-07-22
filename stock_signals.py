@@ -120,9 +120,22 @@ def get_all_stocks():
             'name': df['品种名称'].tolist()
         })
         
+        # 读取补充股票数据
+        try:
+            supplement_data = pd.read_csv('datas/supplement.csv', encoding='utf-8', dtype={'code': str})
+            print(f"成功读取补充股票数据: {len(supplement_data)} 只股票")
+            
+            # 合并到主数据中
+            stock_data = pd.concat([stock_data, supplement_data], ignore_index=True)
+            
+        except FileNotFoundError:
+            print("未找到supplement.csv文件，跳过补充数据")
+        except Exception as e:
+            print(f"读取补充股票数据失败: {e}")
+        
         # 根据code去重，保留第一个出现的记录
         stock_data = stock_data.drop_duplicates(subset=['code'], keep='first')
-        
+
         # 重置索引并返回
         return stock_data.reset_index(drop=True)
     except Exception as e:

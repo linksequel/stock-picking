@@ -207,5 +207,7 @@ marimo/_lsp/
 __marimo__/
 
 # Personal
+log/
 *.json
-*.csv
+/history
+*.DS_Store
