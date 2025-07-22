@@ -125,24 +125,15 @@ def get_stock_prices_after_days(stock_code, signal_date_obj, days=5):
         df['date'] = pd.to_datetime(df['日期'])
         df = df.sort_values('date')
         
-        # 填充信号日期后的N个交易日数据
+        # 只返回实际存在的交易日数据，不进行错误填充
         daily_prices = []
-        for i in range(gap):
-            if i < len(df):
-                row = df.iloc[i]
-                daily_prices.append({
-                    'date': row['日期'],
-                    'close': row['收盘'],
-                    'day': i + 1
-                })
-            else:
-                # 如果数据不足，使用最后一天的数据
-                latest_row = df.iloc[-1]
-                daily_prices.append({
-                    'date': latest_row['日期'],
-                    'close': latest_row['收盘'],
-                    'day': i + 1
-                })
+        for i in range(len(df)):
+            row = df.iloc[i]
+            daily_prices.append({
+                'date': row['日期'],
+                'close': row['收盘'],
+                'day': i + 1
+            })
         
         return daily_prices
             
@@ -237,34 +228,69 @@ def get_history():
     days = 5
     signals_by_date = load_signals_from_csv()
     
+    # 过滤掉今天的数据
+    today = datetime.now().date()
+    filtered_signals_by_date = {}
+    
     # 为每个股票计算后续每天的涨幅
     for date_str, stocks in signals_by_date.items():
         date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-        # 如果signal_date是今天，跳过
-        if date_obj.date() == datetime.now().date():
+        # 如果signal_date是今天，跳过不返回给前端
+        if date_obj.date() == today:
             continue
+            
+        filtered_signals_by_date[date_str] = stocks
+        
         for stock in stocks:
             # 只处理有信号的股票
             if any(stock['signals'].values()):
                 daily_prices = get_stock_prices_after_days(stock['code'], date_obj, days)
                 if daily_prices is not None:
                     stock['daily_prices'] = daily_prices
-                    # 计算每天的涨幅
+                    # 计算每天的涨幅（后一天相对前一天的涨幅）
                     stock['daily_changes'] = []
+                    prev_price = stock['close']  # 从信号日收盘价开始
                     for price_data in daily_prices:
-                        change = ((price_data['close'] - stock['close']) / stock['close']) * 100
+                        current_price = price_data['close']
+                        change = ((current_price - prev_price) / prev_price) * 100
                         stock['daily_changes'].append({
                             'day': price_data['day'],
                             'date': price_data['date'],
-                            'price': price_data['close'],
+                            'price': current_price,
                             'change': change
                         })
+                        prev_price = current_price  # 更新前一天价格
+                    
+                    # 计算累积涨幅（最后一天相对信号日的涨幅）
+                    if daily_prices:
+                        last_price = daily_prices[-1]['close']
+                        accumulate_number = float(((last_price - stock['close']) / stock['close']) * 100)
+
+                        bullish_signals = {"主升", "底成立", "底结构", "底背离", "底钝化"}
+                        signals = stock['signals']
+
+                        has_bullish_signal = any(signals.get(signal, False) for signal in bullish_signals)
+                        has_bear_signal = not has_bullish_signal
+
+                        status = (accumulate_number > 0 and has_bullish_signal) or (
+                                    accumulate_number < 0 and has_bear_signal)
+                        
+                        stock['accumulate'] = {
+                            "number": accumulate_number,
+                            "status": status
+                        }
+                    else:
+                        stock['accumulate'] = {
+                            "number": 0.0,
+                            "status": False
+                        }
                 else:
                     stock['daily_prices'] = None
                     stock['daily_changes'] = None
+                    stock['accumulate'] = None
     
     return jsonify({
-        'signals_by_date': signals_by_date,
+        'signals_by_date': filtered_signals_by_date,
         'days': days
     })
 

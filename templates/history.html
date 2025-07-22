@@ -21,14 +21,27 @@
             background-color: #dc3545;
             color: white;
         }
-        /* 中国股市习惯：红涨绿跌 */
+        /* 中国股市习惯：红涨绿跌 - 使用!important确保优先级 */
         .price-change-positive {
-            color: #dc3545; /* 改为红色 */
-            font-weight: bold;
+            color: #dc3545 !important; /* 红色 */
+            font-weight: bold !important;
         }
         .price-change-negative {
-            color: #28a745; /* 改为绿色 */
-            font-weight: bold;
+            color: #28a745 !important; /* 绿色 */
+            font-weight: bold !important;
+        }
+        .price-change-zero {
+            color: #000000 !important; /* 黑色 */
+            font-weight: bold !important;
+        }
+        /* 预测状态样式 */
+        .status-accurate {
+            color: #dc3545 !important; /* 改为标准红色，更醒目 */
+            font-weight: bold !important;
+        }
+        .status-wrong {
+            color: #28a745 !important; /* 改为标准绿色，更醒目 */
+            font-weight: bold !important;
         }
         /* 信号标签颜色：底部信号和主升信号为红色，顶部信号为绿色 */
         .signal-badge-bullish {
@@ -46,6 +59,19 @@
         .day-column {
             min-width: 80px;
             text-align: center;
+        }
+        /* 累计涨幅列特殊样式 */
+        .accumulate-column {
+            border-left: 3px solid #007bff !important;
+            border-right: 3px solid #007bff !important;
+            background-color: #f8f9fa !important;
+            font-weight: bold !important;
+            text-align: center !important;
+        }
+        .accuracy-rate {
+            color: #007bff;
+            font-weight: bold;
+            margin-left: 10px;
         }
         .date-header {
             background-color: #f8f9fa;
@@ -216,15 +242,14 @@
                 for (let stock of signalsByDate[date]) {
                     if (any(stock.signals)) {
                         totalSignals++;
-                        if (stock.daily_changes && stock.daily_changes.length > 0) {
-                            // 使用最后一天的涨幅进行统计
-                            let lastChange = stock.daily_changes[stock.daily_changes.length - 1].change;
-                            if (lastChange > 0) {
+                        if (stock.accumulate !== null && stock.accumulate !== undefined && stock.accumulate.number !== undefined) {
+                            // 使用accumulate.number字段进行统计
+                            if (stock.accumulate.number > 0) {
                                 upStocks++;
-                            } else if (lastChange < 0) {
+                            } else if (stock.accumulate.number < 0) {
                                 downStocks++;
                             }
-                            totalChange += lastChange;
+                            totalChange += stock.accumulate.number;
                             validChanges++;
                         }
                     }
@@ -283,6 +308,37 @@
             }
         }
 
+        function getPriceChangeClass(change) {
+            // 根据涨跌幅判断样式类，确保数值转换正确
+            let numChange = parseFloat(change);
+            
+            if (numChange > 0) {
+                return 'price-change-positive'; // 红色
+            } else if (numChange < 0) {
+                return 'price-change-negative'; // 绿色
+            } else {
+                return 'price-change-zero'; // 黑色
+            }
+        }
+
+        function calculateAccuracyRate(stocks) {
+            // 计算准确率
+            let total = 0;
+            let accurate = 0;
+            
+            for (let stock of stocks) {
+                if (any(stock.signals) && stock.accumulate && stock.accumulate.status !== null && stock.accumulate.status !== undefined) {
+                    total++;
+                    if (stock.accumulate.status === true) {
+                        accurate++;
+                    }
+                }
+            }
+            
+            if (total === 0) return "0%";
+            return ((accurate / total) * 100).toFixed(1) + "%";
+        }
+
         function formatDateShort(dateStr) {
             // 将日期格式转换为MM-DD格式
             let date = new Date(dateStr);
@@ -291,20 +347,41 @@
             return `${month}-${day}`;
         }
 
-        function generateDateColumns(signalDate, days) {
-            // 根据信号日期和观测天数生成后续交易日的日期列
-            let columns = [];
-            let baseDate = new Date(signalDate);
+        function generateDateColumnsFromData(stocks) {
+            // 根据所有股票的数据生成最大的日期列集合
+            let allDates = new Set();
+            let dateInfoMap = new Map();
             
-            for (let i = 1; i <= days; i++) {
-                let nextDate = new Date(baseDate);
-                nextDate.setDate(baseDate.getDate() + i);
+            // 收集所有股票的所有日期
+            for (let stock of stocks) {
+                if (stock.daily_changes) {
+                    for (let change of stock.daily_changes) {
+                        let dateKey = new Date(change.date).toISOString().split('T')[0];
+                        allDates.add(dateKey);
+                        if (!dateInfoMap.has(dateKey)) {
+                            dateInfoMap.set(dateKey, {
+                                dateStr: formatDateShort(change.date),
+                                fullDate: dateKey,
+                                originalDate: change.date
+                            });
+                        }
+                    }
+                }
+            }
+            
+            // 按日期排序并生成列
+            let sortedDates = Array.from(allDates).sort();
+            let columns = [];
+            for (let i = 0; i < sortedDates.length; i++) {
+                let dateKey = sortedDates[i];
+                let dateInfo = dateInfoMap.get(dateKey);
                 columns.push({
-                    day: i,
-                    dateStr: formatDateShort(nextDate.toISOString()),
-                    fullDate: nextDate.toISOString().split('T')[0]
+                    day: i + 1,
+                    dateStr: dateInfo.dateStr,
+                    fullDate: dateInfo.fullDate
                 });
             }
+            
             return columns;
         }
 
@@ -333,15 +410,18 @@
                     
                     if (signalStocks.length === 0) continue;
                     
+                    // 计算准确率
+                    let accuracyRate = calculateAccuracyRate(signalStocks);
+                    
                     let dateHeader = $(`
                         <div class="date-header">
-                            <h5>${date} (${signalStocks.length} 只股票)</h5>
+                            <h5>${date} (${signalStocks.length} 只股票)<span class="accuracy-rate">准确率: ${accuracyRate}</span></h5>
                         </div>
                     `);
                     container.append(dateHeader);
                     
                     // 生成日期列
-                    let dateColumns = generateDateColumns(date, currentDays);
+                    let dateColumns = generateDateColumnsFromData(signalStocks);
                     
                     // 生成表头
                     let tableHeaderHtml = `
@@ -357,8 +437,8 @@
                     }
                     
                     tableHeaderHtml += `
-                            <th>累计涨幅</th>
-                            <th>状态</th>
+                            <th class="accumulate-column">累计涨幅</th>
+                            <th>预测状态</th>
                         </tr>
                     `;
                     
@@ -384,6 +464,7 @@
                         let totalChangeClass = '';
                         let totalChangeText = '';
                         let statusText = '';
+                        let statusClass = '';
                         
                         // 生成每日涨幅的单元格
                         let dailyChangesCells = '';
@@ -400,18 +481,31 @@
                             for (let col of dateColumns) {
                                 if (changesMap[col.fullDate]) {
                                     let change = changesMap[col.fullDate];
-                                    let changeClass = change.change > 0 ? 'price-change-positive' : 'price-change-negative';
+                                    let changeClass = getPriceChangeClass(change.change);
                                     dailyChangesCells += `<td class="${changeClass}">${change.change.toFixed(2)}%</td>`;
                                 } else {
                                     dailyChangesCells += `<td class="data-missing">数据缺失</td>`;
                                 }
                             }
                             
-                            // 计算累计涨幅
-                            let lastChange = stock.daily_changes[stock.daily_changes.length - 1];
-                            totalChangeClass = lastChange.change > 0 ? 'price-change-positive' : 'price-change-negative';
-                            totalChangeText = lastChange.change.toFixed(2) + '%';
-                            statusText = formatDateShort(lastChange.date);
+                            // 使用accumulate字段计算累计涨幅和预测状态
+                            if (stock.accumulate !== null && stock.accumulate !== undefined && stock.accumulate.number !== undefined) {
+                                totalChangeClass = getPriceChangeClass(stock.accumulate.number);
+                                totalChangeText = stock.accumulate.number.toFixed(2) + '%';
+                                
+                                // 根据accumulate.status判断预测状态
+                                if (stock.accumulate.status === true) {
+                                    statusText = '准确';
+                                    statusClass = 'status-accurate';
+                                } else {
+                                    statusText = '错误';
+                                    statusClass = 'status-wrong';
+                                }
+                            } else {
+                                totalChangeText = '<span class="data-missing">数据缺失</span>';
+                                statusText = '数据缺失';
+                                statusClass = 'data-missing';
+                            }
                         } else {
                             // 如果没有daily_changes数据，所有列都显示数据缺失
                             for (let col of dateColumns) {
@@ -419,6 +513,7 @@
                             }
                             totalChangeText = '<span class="data-missing">数据缺失</span>';
                             statusText = '数据缺失';
+                            statusClass = 'data-missing';
                         }
                         
                         let row = $(`
@@ -428,8 +523,8 @@
                                 <td>${stock.close.toFixed(2)}</td>
                                 <td>${signalsHtml}</td>
                                 ${dailyChangesCells}
-                                <td class="${totalChangeClass}">${totalChangeText}</td>
-                                <td>${statusText}</td>
+                                <td class="accumulate-column ${totalChangeClass}">${totalChangeText}</td>
+                                <td class="${statusClass}">${statusText}</td>
                             </tr>
                         `);
                         
