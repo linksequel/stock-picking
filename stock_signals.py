@@ -4,56 +4,29 @@ import akshare as ak
 from datetime import datetime
 import warnings
 import random
-import logging
 import os
+from logger_config import get_unified_logger, log_stock_analysis, log_system_info
 warnings.filterwarnings('ignore')
 
 def setup_logger_and_log_stocks(stocks):
-    """配置日志并记录stocks信息"""
-    # 配置日志
-    if not os.path.exists('log'):
-        os.makedirs('log')
-    
-    # 配置日志格式
-    log_filename = f"log/stock_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-    
-    # 清除现有的处理器，避免重复添加
-    for handler in logging.root.handlers[:]:
-        logging.root.removeHandler(handler)
-    
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_filename, encoding='utf-8'),
-            logging.StreamHandler()  # 同时输出到控制台
-        ]
-    )
-    logger = logging.getLogger(__name__)
-    
+    """记录stocks信息到统一日志"""
     # 记录stocks信息
     if stocks is not None and not stocks.empty:
-        logger.info(f"获取到股票数量: {len(stocks)}")
-
-        # 转换为完整的字典格式，保留所有列的数据
-        samples_dict = []
-        for _, row in stocks.iterrows():
-            row_dict = row.to_dict()  # 保留完整的行数据
-            samples_dict.append(row_dict)
+        log_stock_analysis(f"获取到股票数量: {len(stocks)}")
         
-        logger.info(f"沪深300股票样本（完整结构）:")
-        # logger.info(json.dumps(samples_dict, ensure_ascii=False, indent=2))
-        
-        # 额外记录一些统计信息
-        logger.info(f"stocks数据结构信息:")
-        logger.info(f"  - 列名: {list(stocks.columns)}")
-        logger.info(f"  - 数据形状: {stocks.shape}")
-        logger.info(f"  - 数据类型: {stocks.dtypes.to_dict()}")
+        # 记录详细的数据结构信息
+        extra_info = {
+            "列名": list(stocks.columns),
+            "数据形状": str(stocks.shape),
+            "数据类型": str(stocks.dtypes.to_dict())
+        }
+        log_system_info("股票数据结构信息:", extra_info)
         
     else:
-        logger.warning("未能获取到股票数据")
+        log_stock_analysis("未能获取到股票数据", 'warning')
     
-    return logger
+    # 返回统一的logger
+    return get_unified_logger('stock_analysis')
 
 def retry_on_failure(max_retries=3, delay=1):
     """重试装饰器"""
@@ -105,7 +78,7 @@ def get_stock_data(stock_code):
         
         return df
     except Exception as e:
-        print(f"获取股票数据失败 {stock_code}: {e}")
+        log_stock_analysis(f"获取股票数据失败 {stock_code}: {e}", 'error')
         return None
 
 @retry_on_failure(max_retries=3, delay=1)
@@ -123,15 +96,15 @@ def get_all_stocks():
         # 读取补充股票数据
         try:
             supplement_data = pd.read_csv('datas/supplement.csv', encoding='utf-8', dtype={'code': str})
-            print(f"成功读取补充股票数据: {len(supplement_data)} 只股票")
+            log_stock_analysis(f"成功读取补充股票数据: {len(supplement_data)} 只股票")
             
             # 合并到主数据中
             stock_data = pd.concat([stock_data, supplement_data], ignore_index=True)
             
         except FileNotFoundError:
-            print("未找到supplement.csv文件，跳过补充数据")
+            log_stock_analysis("未找到supplement.csv文件，跳过补充数据", 'warning')
         except Exception as e:
-            print(f"读取补充股票数据失败: {e}")
+            log_stock_analysis(f"读取补充股票数据失败: {e}", 'error')
         
         # 根据code去重，保留第一个出现的记录
         stock_data = stock_data.drop_duplicates(subset=['code'], keep='first')
@@ -139,7 +112,7 @@ def get_all_stocks():
         # 重置索引并返回
         return stock_data.reset_index(drop=True)
     except Exception as e:
-        print(f"获取沪深300成分股失败: {e}")
+        log_stock_analysis(f"获取沪深300成分股失败: {e}", 'error')
         return None
 
 def EMA(series, periods):
@@ -543,7 +516,7 @@ def get_all_stock_signals():
             futures = [executor.submit(process_single_stock, (code, name)) for code, name in batch]
             
             # 记录批次信息到日志
-            logger.info(f"正在处理第 {batch_count}/{total_batches} 批，此批次包含 {len(futures)} 个任务")
+            log_stock_analysis(f"正在处理第 {batch_count}/{total_batches} 批，此批次包含 {len(futures)} 个任务")
             
             # 处理结果
             for future in futures:
@@ -560,7 +533,7 @@ def get_all_stock_signals():
                         estimated_total_time = (elapsed_time / processed) * total if processed > 0 else 0
                         remaining_time = max(0, estimated_total_time - elapsed_time)
                         
-                        print(f"处理进度: {processed}/{total} ({progress:.1f}%) - "
+                        log_stock_analysis(f"处理进度: {processed}/{total} ({progress:.1f}%) - "
                               f"已用时: {int(elapsed_time)}秒 - "
                               f"预计剩余: {int(remaining_time)}秒")
                     
@@ -570,7 +543,8 @@ def get_all_stock_signals():
             # 批次间添加延迟，避免请求过快
             time.sleep(2)
     
-    print(f"处理完成! 总用时: {int(time.time() - start_time)}秒")
-    print(f"成功处理: {len(all_signals)}/{total} 只股票")
+    total_time = int(time.time() - start_time)
+    log_stock_analysis(f"处理完成! 总用时: {total_time}秒")
+    log_stock_analysis(f"成功处理: {len(all_signals)}/{total} 只股票")
     
     return all_signals 
