@@ -1,8 +1,9 @@
 # stock-picking
 small algorithm developed by km chen for picking stocks
 
-## 0717-V1.0
-【NEW】可以验证历史选股策略，后N天的涨幅
+## 0722-V1.1
+1. 可以验证历史选股策略，后N天的涨幅
+2. 新增每日准确率统计，验证策略正确性
 
 ## Usage
 suitable for all operation systems(windows/linux/macos)
@@ -11,4 +12,4 @@ suitable for all operation systems(windows/linux/macos)
 3. python app.py
 
 ## Screenshot
-![image](./example.png)
+![image](./0722.png)
