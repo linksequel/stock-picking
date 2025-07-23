@@ -340,14 +340,26 @@ if __name__ == '__main__':
     
     logger = get_unified_logger('flask_app')
     logger.info("=== 股票信号分析系统启动 ===")
-    logger.info("正在启动本地服务器...")
-    logger.info("服务器地址: http://127.0.0.1:5000")
-    logger.info("历史信号页面: http://127.0.0.1:5000/history")
-    logger.info("您可以在浏览器中访问上述地址查看结果")
-    logger.info("=============================")
     
-    # 在新线程中打开浏览器
-    threading.Thread(target=open_browser).start()
+    # 判断是否为生产环境
+    is_production = os.environ.get('FLASK_ENV') == 'production'
     
-    # 启动Flask应用
-    app.run(debug=True, port=5000)
+    if is_production:
+        logger.info("正在启动生产服务器...")
+        logger.info("服务器地址: http://0.0.0.0:5000")
+        logger.info("历史信号页面: http://0.0.0.0:5000/history")
+        logger.info("=============================")
+        # 生产环境配置
+        app.run(host='0.0.0.0', port=5000, debug=False)
+    else:
+        logger.info("正在启动本地服务器...")
+        logger.info("服务器地址: http://127.0.0.1:5000")
+        logger.info("历史信号页面: http://127.0.0.1:5000/history")
+        logger.info("您可以在浏览器中访问上述地址查看结果")
+        logger.info("=============================")
+        
+        # 在新线程中打开浏览器
+        threading.Thread(target=open_browser).start()
+        
+        # 启动Flask应用
+        app.run(debug=True, port=5000)
